@@ -136,7 +136,7 @@
             RefreshCcw: (p) => <Icon {...p} path={<><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" /></>} />,
         };
 
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3n7ADCOqRU0GpfH2i2QKw-Aj9cnxjK8B9JO4l1Q__P9NGZ80jzOX0L6_y3gZmcsQbocR6w9XhFRig/pub?gid=709614769&single=true&output=csv';
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSjZQ0rZU5qBAtIvL7s0FECvlBxtjZLkA0nrOvW37bnbtORJ9VeqWAWt-Hbz8tTxSQ_oxAqI4yMGawP/pub?gid=424491140&single=true&output=csv';
 
         const HABITS = [
             'Bangun Pagi', 
@@ -181,7 +181,8 @@
 
             const handleLogin = (e) => {
                 e.preventDefault();
-                if (loginUser === 'smpn12yes' && loginPass === '123456') {
+                // Kredensial diubah sesuai permintaan
+                if (loginUser === 'smpn12madiun' && loginPass === '123456') {
                     setIsLoggedIn(true);
                     setLoginError('');
                 } else {
@@ -200,7 +201,7 @@
                 fetchData();
             };
 
-            // --- SMART PARSING LOGIC ---
+            // --- SMART PARSING LOGIC (DIPERBAIKI) ---
             
             // 1. Cek Boolean Standar (Ya/Tidak/Checkbox)
             const checkBoolean = (row, keyKeywords) => {
@@ -221,7 +222,8 @@
 
                 const positiveValues = [
                     'ya', 'yes', 'true', '1', 'sudah', 'dilakukan', 
-                    'checklist', 'ceklis', 'v', '✓', 'ok', 'siap'
+                    'checklist', 'ceklis', 'v', '✓', 'ok', 'siap',
+                    'selalu', 'sering', 'iya', 'y'
                 ];
                 
                 if (positiveValues.includes(val)) return true;
@@ -234,13 +236,10 @@
                 return false;
             };
 
-            // 2. Cek Kebiasaan Berbasis Waktu (Untuk Bangun Pagi & Tidur)
-            // limitStr: format "HH:MM".
+            // 2. Cek Kebiasaan Berbasis Waktu
             const checkTimeHabit = (row, keyKeywords, limitStr) => {
-                // A. Cek jika isinya text standar (Ya/Tidak) dulu sebagai fallback
                 if (checkBoolean(row, keyKeywords)) return true;
 
-                // B. Cari kolom
                 const key = Object.keys(row).find(k => {
                     const headerLower = k.toLowerCase();
                     return Array.isArray(keyKeywords) 
@@ -254,7 +253,6 @@
                 if (!val) return false;
                 val = val.toString().trim();
 
-                // C. Regex untuk format jam HH:MM atau H:MM atau H.MM
                 const timeMatch = val.match(/(\d{1,2})[:.](\d{2})/);
 
                 if (timeMatch) {
@@ -268,34 +266,74 @@
                     const [lh, lm] = limitStr.split(':').map(Number);
                     const limitMins = lh * 60 + lm;
 
-                    // KASUS 1: BANGUN PAGI (Limit misal 05:00)
                     if (limitMins < 720) {
-                        return rowMins <= limitMins;
-                    } 
-                    
-                    // KASUS 2: TIDUR CEPAT (Limit misal 22:00)
-                    else {
-                        if (rowMins < 720) return false; // Tidur lewat tengah malam
-                        return rowMins <= limitMins;
+                        return rowMins <= limitMins; // Bangun pagi
+                    } else {
+                        if (rowMins < 720) return false; // Lewat tengah malam
+                        return rowMins <= limitMins; // Tidur
                     }
                 }
+                
                 return false;
             };
 
-            // 3. Parse Tanggal yang Robust
+            // 3. Parse Tanggal yang Sangat Robust (PENYESUAIAN BULAN)
             const parseDate = (dateStr) => {
                 if (!dateStr) return null;
-                let d = new Date(dateStr);
+                let str = dateStr.toString().trim().replace(/,/g, '');
+                
+                // Pisahkan komponen berdasarkan garis miring, strip, spasi, atau titik dua
+                let parts = str.split(/[\/\-\s\:]+/);
+                if (parts.length >= 3) {
+                    let p1 = parseInt(parts[0]);
+                    let p2 = parseInt(parts[1]);
+                    let p3 = parseInt(parts[2]);
+                    
+                    let y, m, day;
+                    
+                    if (p1 > 1000) { 
+                        // Jika terbaca format Sheet YYYY/MM/DD atau YYYY-MM-DD
+                        y = p1; 
+                        m = p2; 
+                        day = p3; 
+                    }
+                    else if (p3 > 1000) {
+                        // Jika terbaca format DD/MM/YYYY atau MM/DD/YYYY
+                        y = p3;
+                        
+                        // LOGIKA CERDAS: Mencari tahu mana yang bulan mana yang tanggal.
+                        // Jika salah satu angka lebih besar dari 12, maka ITU PASTI tanggal.
+                        if (p2 > 12) { 
+                            // Format: DD/MM/YYYY
+                            day = p2; 
+                            m = p1; 
+                        }
+                        else if (p1 > 12) { 
+                            // Format: MM/DD/YYYY
+                            day = p1; 
+                            m = p2; 
+                        }
+                        else { 
+                            // BILA KEDUANYA <= 12 (Kasus paling sulit seperti 11/10/2026):
+                            // Format default dari Google Form Indonesia adalah DD/MM/YYYY
+                            day = p1; // p1 adalah Tanggal
+                            m = p2;   // p2 adalah Bulan
+                        }
+                    }
+                    
+                    if (y && m && day) {
+                        let h = parts.length > 3 ? parseInt(parts[3]) : 0;
+                        let min = parts.length > 4 ? parseInt(parts[4]) : 0;
+                        let sec = parts.length > 5 ? parseInt(parts[5]) : 0;
+                        // Ingat di Javascript: Bulan dimulai dari 0 (Januari = 0)
+                        return new Date(y, m - 1, day, h, min, sec);
+                    }
+                }
+                
+                // Fallback terakhir
+                let d = new Date(str);
                 if (!isNaN(d.getTime())) return d;
                 
-                const parts = dateStr.split(/[\/\-\.]/);
-                if (parts.length >= 3) {
-                    const p1 = parseInt(parts[0]);
-                    const p2 = parseInt(parts[1]);
-                    const p3 = parseInt(parts[2]); 
-                    if (p1 > 12) return new Date(p3, p2 - 1, p1); 
-                    return new Date(p3, p2 - 1, p1); 
-                }
                 return null;
             };
 
@@ -303,49 +341,46 @@
                 setLoading(true);
                 setDebugMsg('Menghubungkan ke server data...');
                 
-                Papa.parse(CSV_URL, {
+                const cacheBuster = `&_cb=${new Date().getTime()}`;
+                
+                Papa.parse(CSV_URL + cacheBuster, {
                     download: true, 
                     header: true, 
                     skipEmptyLines: true,
                     complete: (results) => {
                         try {
-                            setDebugMsg(`Membaca ${results.data.length} baris mentah...`);
+                            const raw = results.data;
+                            setDebugMsg(`Membaca ${raw.length} baris mentah...`);
                             
-                            const cleanData = results.data.map((row, idx) => {
-                                // 1. DETEKSI NAMA
-                                const nameKey = Object.keys(row).find(k => {
-                                    const lower = k.toLowerCase();
-                                    return (lower.includes('nama') || lower.includes('siswa')) &&
-                                           !lower.includes('kode') &&
-                                           !lower.includes('id') &&
-                                           !lower.includes('induk') &&
-                                           !lower.includes('timestamp');
-                                });
-
-                                const dateKey = Object.keys(row).find(k => /timestamp|tanggal|waktu|date/i.test(k));
-                                const classKey = Object.keys(row).find(k => /kelas|class|rombongan/i.test(k));
+                            const cleanData = raw.map((row, idx) => {
+                                const keys = Object.keys(row);
+                                
+                                const dateKey = keys.find(k => /timestamp|tanggal|waktu|date|hari/i.test(k)) || keys[0];
+                                const classKey = keys.find(k => /kelas|class|rombongan|tingkat|kls|ruang/i.test(k));
+                                const nameKey = keys.find(k => /nama|siswa|lengkap|peserta/i.test(k) && !/guru|sekolah/i.test(k));
 
                                 const timestamp = parseDate(row[dateKey]);
+                                
+                                let kelasVal = classKey && row[classKey] ? row[classKey].toString().toUpperCase().trim() : 'TANPA KELAS';
+                                let namaVal = nameKey && row[nameKey] ? row[nameKey].toString().toUpperCase().replace(/['"]/g, '').trim() : (row[keys[1]] ? row[keys[1]].toString().toUpperCase().trim() : 'TANPA NAMA');
 
                                 return {
                                     timestamp: timestamp,
-                                    kelas: (row[classKey] || 'TIDAK DIKETAHUI').toString().toUpperCase().trim(),
-                                    nama: (row[nameKey] || 'SISWA TANPA NAMA').toString().toUpperCase().replace(/['"]/g, '').trim(),
+                                    kelas: kelasVal,
+                                    nama: namaVal,
                                     
-                                    h1: checkTimeHabit(row, ['Bangun Pagi', 'Bangun'], '05:00'),
-                                    h2: checkBoolean(row, ['Beribadah', 'Ibadah', 'Sholat', 'Doa']),
-                                    h3: checkBoolean(row, ['Berolahraga', 'Olahraga', 'Senam']),
-                                    h4: checkBoolean(row, ['Makan Sehat', 'Makan', 'Gizi']),
-                                    h5: checkBoolean(row, ['Gemar Belajar', 'Belajar']),
-                                    h6: checkBoolean(row, ['Bermasyarakat', 'Masyarakat', 'Sosial', 'Membantu']),
-                                    h7: checkTimeHabit(row, ['Tidur Cepat', 'Tidur'], '22:00'),
+                                    h1: checkTimeHabit(row, ['Bangun', 'Pagi', 'Subuh'], '05:30'),
+                                    h2: checkBoolean(row, ['Ibadah', 'Sholat', 'Doa', 'Agama', 'Mengaji']),
+                                    h3: checkBoolean(row, ['Olahraga', 'Senam', 'Fisik', 'Lari']),
+                                    h4: checkBoolean(row, ['Makan', 'Gizi', 'Sarapan', 'Sayur', 'Buah']),
+                                    h5: checkBoolean(row, ['Belajar', 'Membaca', 'Buku', 'Pelajaran', 'Tugas']),
+                                    h6: checkBoolean(row, ['Masyarakat', 'Sosial', 'Membantu', 'Keluarga', 'Lingkungan']),
+                                    h7: checkTimeHabit(row, ['Tidur', 'Malam', 'Istirahat'], '22:30'),
                                 };
                             }).filter(item => 
                                 item.timestamp !== null && 
-                                !isNaN(item.timestamp.getTime()) &&
-                                item.kelas !== '' && 
                                 item.nama !== '' &&
-                                !item.kelas.includes('TIDAK') &&
+                                item.nama !== 'TANPA NAMA' &&
                                 !/^[\d\-\.]+$/.test(item.nama)
                             );
 
@@ -353,9 +388,13 @@
                             setDebugMsg(`${cleanData.length} data valid berhasil dimuat.`);
 
                             if(cleanData.length > 0) {
-                                // Update filter hanya jika belum ada data atau user belum memilih custom
-                                // Agar refresh tidak mereset filter yang sedang dilihat user
-                                if (rawData.length === 0) {
+                                // Jika data di filter saat ini kosong, otomatis arahkan ke data terbaru
+                                const currentFilterHasData = cleanData.some(d => 
+                                    d.timestamp.getMonth() === parseInt(selectedMonth) &&
+                                    d.timestamp.getFullYear() === parseInt(selectedYear)
+                                );
+
+                                if (!currentFilterHasData || rawData.length === 0) {
                                     const latestDate = cleanData.reduce((latest, current) => {
                                         return current.timestamp > latest ? current.timestamp : latest;
                                     }, cleanData[0].timestamp);
@@ -364,7 +403,7 @@
                                     setSelectedYear(latestDate.getFullYear());
 
                                     const classes = [...new Set(cleanData.map(d => d.kelas))].sort();
-                                    if (classes.length > 0) {
+                                    if (classes.length > 0 && !classes.includes(selectedClass)) {
                                         setSelectedClass(classes[0]);
                                     }
                                 }
@@ -373,13 +412,13 @@
                             setLoading(false);
                         } catch (err) {
                             console.error("Error processing:", err);
-                            setDebugMsg(`Gagal memproses data: ${err.message}`);
+                            setDebugMsg(`❌ Gagal memproses: ${err.message}`);
                             setLoading(false);
                         }
                     },
                     error: (err) => {
                         console.error("Network error:", err);
-                        setDebugMsg("Gagal mengunduh data. Cek koneksi internet.");
+                        setDebugMsg("❌ Gagal mengunduh. Cek akses/publikasi link CSV.");
                         setLoading(false);
                     }
                 });
@@ -394,6 +433,22 @@
             const availableClasses = useMemo(() => {
                 return [...new Set(rawData.map(d => d.kelas))].sort();
             }, [rawData]);
+
+            const availableYears = useMemo(() => {
+                const years = new Set(rawData.map(d => d.timestamp.getFullYear()));
+                const currYear = new Date().getFullYear();
+                years.add(currYear);
+                years.add(currYear - 1);
+                years.add(currYear + 1);
+                return [...years].sort((a,b) => b - a); // Urut menurun
+            }, [rawData]);
+
+            useEffect(() => {
+                // Pastikan selalu ada kelas yang terpilih jika data tersedia
+                if (availableClasses.length > 0 && (!selectedClass || !availableClasses.includes(selectedClass))) {
+                    setSelectedClass(availableClasses[0]);
+                }
+            }, [availableClasses, selectedClass]);
 
             // --- PROCESSOR DATA ---
             const processData = (isWeekly = false) => {
@@ -541,7 +596,7 @@
                                 )}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Username</label>
-                                    <input type="text" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full p-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none transition bg-slate-50 focus:bg-white" placeholder="Masukkan username" autoFocus />
+                                    <input type="text" value={loginUser} onChange={(e) => setLoginUser(e.target.value)} className="w-full p-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none transition bg-slate-50 focus:bg-white" placeholder="Masukkan username (smpn12madiun)" autoFocus />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
@@ -604,7 +659,7 @@
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tahun</label>
                                 <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="w-24 text-sm p-2 bg-slate-50 border border-slate-200 rounded-md focus:ring-2 focus:ring-brand-500 outline-none">
-                                    {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                                    {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
                                 </select>
                             </div>
                             
@@ -637,6 +692,7 @@
                             )}
                         </div>
 
+                        {}
                         {activeTab === 'rekap' && (
                             <div className="flex flex-col h-full animate-fade-in">
                                 <div className="bg-white shadow-lg p-8 mx-auto w-full max-w-[297mm] min-h-[210mm] print-container relative text-slate-900">
@@ -711,6 +767,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'rekapMingguan' && (
                             <div className="flex flex-col h-full animate-fade-in">
                                 <div className="bg-white shadow-lg p-8 mx-auto w-full max-w-[297mm] min-h-[210mm] print-container relative text-slate-900">
@@ -785,6 +842,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'rekapHarian' && (
                             <div className="flex flex-col h-full animate-fade-in">
                                 <div className="bg-white shadow-lg p-8 mx-auto w-full max-w-[297mm] min-h-[210mm] print-container relative text-slate-900">
@@ -858,6 +916,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'dashboard' && (
                             <div className="animate-fade-in space-y-6">
                                 {!dashboardStats ? (
@@ -913,6 +972,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'data' && (
                             <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between">
